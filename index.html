@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
+    <link rel="stylesheet" href="styles.css">
+    <title>Credit Card Purchases Analyzer</title>
+    <!-- Include Chart.js via CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+</head>
+<body>
+<header>
+    <h1>Credit Card Purchases Analyzer</h1>
+    <label for="fileUpload">Open CSV File</label>
+    <input type="file" id="fileUpload" accept=".csv"/>
+    <button id="resetButton">Reset Chart</button>
+</header>
+
+<div id="chartContainer">
+    <canvas id="categoryChart"></canvas>
+</div>
+
+<div id="results"></div>
+
+<script src="renderer.js"></script>
+</body>
+</html>

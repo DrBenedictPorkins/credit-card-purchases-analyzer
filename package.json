@@ -1,0 +1,20 @@
+{
+  "name": "credit-card-purchases-analyzer",
+  "version": "1.0.0",
+  "description": "An Electron app for analyzing Credit Card Purchase Statements",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "chart.js": "^4.4.4",
+    "csv-parse": "^5.0.4"
+  },
+  "devDependencies": {
+    "electron": "^32.1.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:DrBenedictPorkins/credit-card-purchases-analyzer.git"
+  }
+}
