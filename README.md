@@ -3,6 +3,7 @@
 ## Overview
 Credit Card Purchases Analyzer is an Electron-based desktop application that helps users analyze and visualize their credit card purchase statements. It provides an interactive graphical representation of spending across different categories, allowing users to gain insights into their purchasing habits.
 
+![demo](docs/electron-tailf.gif)
 
 ## Features
 - Import credit card statements from CSV files
@@ -49,10 +50,9 @@ To facilitate the creation of the required CSV file from credit card statements,
 ### Steps:
 1. Take clear photos or scans of your credit card statement. 
 2. Upload these images to your chosen AI tool (e.g., ChatGPT with image capabilities or Claude AI).
-3. Use the following prompt to instruct the AI to generate the CSV file:
-
 ![CC Statment](docs/CC_transactions.jpg)
 
+3. Use the following prompt to instruct the AI to generate the CSV file:
 ```text
 Please analyze the image(s) of bank statement transactions I provide and follow these steps:
 Extract all transaction details, including date, description, and amount.

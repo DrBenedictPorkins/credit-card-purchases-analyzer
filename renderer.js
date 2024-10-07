@@ -461,7 +461,7 @@ function showTransactionTable(category) {
     </div>
   `;
   resultsDiv.style.display = 'block';
-  resultsDiv.scrollIntoView({behavior: 'smooth'});
+  // resultsDiv.scrollIntoView({behavior: 'smooth'});
 }
 
 function resizeChart() {

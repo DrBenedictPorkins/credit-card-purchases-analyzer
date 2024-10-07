@@ -5,8 +5,8 @@ const { parse } = require('csv-parse/sync');
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: 780,
+    height: 1230,
     minWidth: 800,   // Minimum width
     minHeight: 600,  // Minimum height
     webPreferences: {
