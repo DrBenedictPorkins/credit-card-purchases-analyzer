@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
+    <link rel="stylesheet" href="styles.css">
+    <title>Transaction Details</title>
+    <style>
+        body {
+            padding: 20px;
+            max-width: 100%;
+            overflow-x: hidden;
+        }
+        
+        .detail-header {
+            background-color: #3498db;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .detail-subtitle {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.8);
+            margin-top: 5px;
+        }
+        
+        .category-list {
+            margin-top: 8px;
+            font-size: 12px;
+            line-height: 1.4;
+            color: rgba(255, 255, 255, 0.7);
+        }
+        
+        .detail-summary {
+            display: flex;
+            justify-content: space-between;
+            background-color: rgba(52, 152, 219, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .summary-item {
+            text-align: center;
+        }
+        
+        .summary-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2ecc71;
+        }
+        
+        .summary-label {
+            font-size: 14px;
+            color: #bdc3c7;
+        }
+        
+        .transaction-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-top: 20px;
+        }
+        
+        .transaction-table th,
+        .transaction-table td {
+            padding: 12px 15px;
+            text-align: left;
+        }
+        
+        .transaction-table thead {
+            background-color: #34495e;
+        }
+        
+        .transaction-table th {
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+        }
+        
+        .transaction-table th:hover {
+            background-color: #2c3e50;
+        }
+        
+        .transaction-table th::after {
+            content: '';
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 0;
+            height: 0;
+        }
+        
+        .transaction-table th.sort-asc::after {
+            content: '▲';
+            font-size: 0.7em;
+        }
+        
+        .transaction-table th.sort-desc::after {
+            content: '▼';
+            font-size: 0.7em;
+        }
+        
+        .transaction-table tbody tr:nth-child(even) {
+            background-color: rgba(52, 73, 94, 0.7);
+        }
+        
+        .transaction-table tbody tr:hover {
+            background-color: rgba(52, 152, 219, 0.3);
+        }
+        
+        .transaction-table .amount {
+            font-weight: bold;
+            color: #2ecc71;
+        }
+        
+        .close-button {
+            display: block;
+            margin: 20px auto;
+            padding: 10px 20px;
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        
+        .close-button:hover {
+            background-color: #c0392b;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #bdc3c7;
+        }
+    </style>
+</head>
+<body>
+    <div id="detail-container">
+        <div class="detail-header">
+            <h2 id="description-title">Loading transaction details...</h2>
+            <div id="detail-subtitle" class="detail-subtitle"></div>
+        </div>
+        
+        <div class="detail-summary">
+            <div class="summary-item">
+                <div class="summary-value" id="total-transactions">-</div>
+                <div class="summary-label">Transactions</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-value" id="total-amount">-</div>
+                <div class="summary-label">Total Amount</div>
+            </div>
+            <div class="summary-item">
+                <div class="summary-value" id="average-amount">-</div>
+                <div class="summary-label">Average Amount</div>
+            </div>
+        </div>
+        
+        <div id="transactions-list"></div>
+        
+        <button class="close-button" onclick="window.close()">Close Window</button>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Listen for detail data from the main process
+            window.electronAPI.onDetailData((data) => {
+                renderDetailView(data);
+            });
+        });
+        
+        // Global variables to store transaction data and sorting state
+        let allTransactions = [];
+        let currentSortColumn = 'Date';
+        let currentSortDirection = 'desc';
+        let isVendorDetailWindow = false;
+        
+        function renderDetailView(data) {
+            const { description, transactions } = data;
+            
+            // Store transactions globally for sorting later
+            allTransactions = [...transactions];
+            
+            // Determine if this is a vendor or description detail window by checking transaction matches
+            isVendorDetailWindow = transactions.length > 0 && 
+                                   transactions.every(t => t.Vendor && t.Vendor.toLowerCase() === description.toLowerCase());
+            
+            // Update the title and subtitle
+            const windowType = isVendorDetailWindow ? 'Vendor' : 'Description';
+            document.title = `${windowType}: ${description}`;
+            document.getElementById('description-title').textContent = description;
+            
+            // For vendor windows, check if all transactions have the same category
+            let categoryInfo = '';
+            if (isVendorDetailWindow && transactions.length > 0) {
+                const categories = [...new Set(transactions.map(t => t.Category))];
+                
+                // Create a category frequency map
+                const categoryCount = {};
+                transactions.forEach(t => {
+                    if (t.Category) {
+                        categoryCount[t.Category] = (categoryCount[t.Category] || 0) + 1;
+                    }
+                });
+                
+                // Sort categories by frequency
+                const sortedCategories = Object.entries(categoryCount)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([cat, count]) => `${cat} (${count})`);
+                
+                if (categories.length === 1) {
+                    categoryInfo = ` (Category: ${categories[0]})`;
+                } else if (categories.length > 1) {
+                    categoryInfo = ` (Categories: ${sortedCategories.join(', ')})`;
+                }
+            }
+            
+            // Check if the subtitle might be too long for display
+            const subtitleText = `Showing all transactions from ${windowType.toLowerCase()}: ${description}${categoryInfo}`;
+            
+            // For long subtitles with multiple categories, create a more detailed layout
+            if (isVendorDetailWindow && subtitleText.length > 100 && categoryInfo.includes(',')) {
+                document.getElementById('detail-subtitle').innerHTML = `
+                    <div>Showing all transactions from ${windowType.toLowerCase()}: ${description}</div>
+                    <div class="category-list">${categoryInfo.replace('(Categories: ', '').replace(')', '')}</div>
+                `;
+            } else {
+                document.getElementById('detail-subtitle').textContent = subtitleText;
+            }
+            
+            // Calculate summary statistics
+            const totalTransactions = transactions.length;
+            const totalAmount = transactions.reduce((sum, t) => sum + parseFloat(t.Amount), 0);
+            const averageAmount = totalTransactions > 0 ? totalAmount / totalTransactions : 0;
+            
+            // Format currency
+            const formatCurrency = (amount) => {
+                return new Intl.NumberFormat('en-US', {
+                    style: 'currency',
+                    currency: 'USD',
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                }).format(amount);
+            };
+            
+            // Update summary section
+            document.getElementById('total-transactions').textContent = totalTransactions;
+            document.getElementById('total-amount').textContent = formatCurrency(totalAmount);
+            document.getElementById('average-amount').textContent = formatCurrency(averageAmount);
+            
+            // Render transactions table
+            const transactionsContainer = document.getElementById('transactions-list');
+            
+            if (totalTransactions === 0) {
+                transactionsContainer.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No transactions found for "${description}"</h3>
+                        <p>Try selecting a different description or category.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Sort transactions by date (newest first)
+            const sortedTransactions = [...transactions].sort((a, b) => new Date(b.Date) - new Date(a.Date));
+            
+            // Build the table HTML based on window type (hide vendor column in vendor detail window)
+            if (isVendorDetailWindow) {
+                transactionsContainer.innerHTML = `
+                    <table class="transaction-table" id="transaction-table">
+                        <thead>
+                            <tr>
+                                <th data-column="Date">Date</th>
+                                <th data-column="Description">Description</th>
+                                <th data-column="Amount">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody id="transactions-body">
+                        </tbody>
+                    </table>
+                `;
+            } else {
+                transactionsContainer.innerHTML = `
+                    <table class="transaction-table" id="transaction-table">
+                        <thead>
+                            <tr>
+                                <th data-column="Date">Date</th>
+                                <th data-column="Vendor">Vendor</th>
+                                <th data-column="Description">Description</th>
+                                <th data-column="Amount">Amount</th>
+                                <th data-column="Category">Category</th>
+                            </tr>
+                        </thead>
+                        <tbody id="transactions-body">
+                        </tbody>
+                    </table>
+                `;
+            }
+            
+            // Add click event listeners to table headers for sorting
+            document.querySelectorAll('.transaction-table th').forEach(th => {
+                th.addEventListener('click', () => {
+                    const column = th.getAttribute('data-column');
+                    sortTransactions(column);
+                });
+                
+                // Add sort indicator to the current sort column
+                if (th.getAttribute('data-column') === currentSortColumn) {
+                    th.classList.add(currentSortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+                }
+            });
+            
+            // Initial render of sorted transactions
+            renderSortedTransactions(sortedTransactions);
+        }
+        
+        /**
+         * Sort transactions by the specified column
+         * @param {string} column - The column to sort by
+         */
+        function sortTransactions(column) {
+            // Remove sort indicators from all headers
+            document.querySelectorAll('.transaction-table th').forEach(th => {
+                th.classList.remove('sort-asc', 'sort-desc');
+            });
+            
+            // If same column, toggle direction, otherwise set new column to ascending
+            if (column === currentSortColumn) {
+                currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSortColumn = column;
+                // Set default direction based on column type
+                if (column === 'Amount') {
+                    currentSortDirection = 'desc'; // Largest amounts first
+                } else if (column === 'Date') {
+                    currentSortDirection = 'desc'; // Newest dates first
+                } else {
+                    currentSortDirection = 'asc'; // A-Z for text
+                }
+            }
+            
+            // Add sort indicator to current sort column
+            const th = document.querySelector(`.transaction-table th[data-column="${column}"]`);
+            th.classList.add(currentSortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+            
+            // Sort the transactions
+            const sortedTransactions = [...allTransactions].sort((a, b) => {
+                let valueA = a[column] || '';
+                let valueB = b[column] || '';
+                
+                // Special handling for date values
+                if (column === 'Date') {
+                    valueA = new Date(valueA);
+                    valueB = new Date(valueB);
+                    return currentSortDirection === 'asc' 
+                        ? valueA - valueB 
+                        : valueB - valueA;
+                }
+                
+                // Special handling for amount values
+                if (column === 'Amount') {
+                    valueA = parseFloat(valueA) || 0;
+                    valueB = parseFloat(valueB) || 0;
+                    return currentSortDirection === 'asc' 
+                        ? valueA - valueB 
+                        : valueB - valueA;
+                }
+                
+                // Case-insensitive string comparison for text
+                valueA = valueA.toString().toLowerCase();
+                valueB = valueB.toString().toLowerCase();
+                
+                if (valueA < valueB) return currentSortDirection === 'asc' ? -1 : 1;
+                if (valueA > valueB) return currentSortDirection === 'asc' ? 1 : -1;
+                return 0;
+            });
+            
+            renderSortedTransactions(sortedTransactions);
+        }
+        
+        /**
+         * Render the sorted transactions to the table
+         * @param {Array} sortedTransactions - The sorted array of transactions
+         */
+        function renderSortedTransactions(sortedTransactions) {
+            const tbody = document.getElementById('transactions-body');
+            tbody.innerHTML = '';
+            
+            // Format currency
+            const formatCurrency = (amount) => {
+                return new Intl.NumberFormat('en-US', {
+                    style: 'currency',
+                    currency: 'USD',
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                }).format(amount);
+            };
+            
+            sortedTransactions.forEach(t => {
+                const row = document.createElement('tr');
+                
+                // Date cell
+                const dateCell = document.createElement('td');
+                dateCell.textContent = t.Date || 'N/A';
+                row.appendChild(dateCell);
+                
+                // Only add Vendor cell if not a vendor window
+                if (!isVendorDetailWindow) {
+                    const vendorCell = document.createElement('td');
+                    vendorCell.textContent = t.Vendor || 'N/A';
+                    row.appendChild(vendorCell);
+                }
+                
+                // Description cell
+                const descCell = document.createElement('td');
+                descCell.textContent = t.Description || 'N/A';
+                row.appendChild(descCell);
+                
+                // Amount cell
+                const amountCell = document.createElement('td');
+                amountCell.className = 'amount';
+                amountCell.textContent = formatCurrency(parseFloat(t.Amount));
+                row.appendChild(amountCell);
+                
+                // Only add Category cell if not a vendor window
+                if (!isVendorDetailWindow) {
+                    const catCell = document.createElement('td');
+                    catCell.textContent = t.Category || 'N/A';
+                    row.appendChild(catCell);
+                }
+                
+                tbody.appendChild(row);
+            });
+        }
+    </script>
+</body>
+</html>

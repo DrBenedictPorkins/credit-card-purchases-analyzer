@@ -4,17 +4,41 @@
   "description": "An Electron app for analyzing Credit Card Purchase Statements",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac"
   },
   "dependencies": {
     "chart.js": "^4.4.4",
     "csv-parse": "^5.0.4"
   },
   "devDependencies": {
-    "electron": "^32.1.2"
+    "electron": "^32.1.2",
+    "electron-builder": "^24.13.3"
   },
   "repository": {
     "type": "git",
     "url": "git@github.com:DrBenedictPorkins/credit-card-purchases-analyzer.git"
+  },
+  "build": {
+    "appId": "com.byteclub.credit-card-purchases-analyzer",
+    "productName": "Credit Card Purchases Analyzer",
+    "mac": {
+      "category": "public.app-category.finance",
+      "target": ["dmg", "zip"],
+      "icon": "build/icon.icns",
+      "darkModeSupport": true
+    },
+    "files": [
+      "**/*",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*.d.ts",
+      "!**/node_modules/.bin",
+      "!build",
+      "!dist",
+      "!docs"
+    ]
   }
 }

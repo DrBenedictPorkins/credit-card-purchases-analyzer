@@ -59,7 +59,13 @@ function parseCSV(csvText) {
     let isRowValid = false;
 
     headers.forEach((header, index) => {
-      const value = row[index] ? row[index].trim() : '';
+      let value = row[index] ? row[index].trim() : '';
+      
+      // Remove double quotes from Description field if present
+      if ((header === 'Description' || header === 'Vendor') && value) {
+        value = value.replace(/["]/g, '');
+      }
+      
       transaction[header] = value;
       if (value !== '') {
         isRowValid = true;
@@ -99,18 +105,19 @@ function analyzeTransactions(transactions) {
     return acc;
   }, {});
 
+  // Send all transactions to main process for detail view
+  if (window.electronAPI) {
+    try {
+      // Store all transactions in main process
+      const allTransactions = Object.values(transactionData).flatMap(cat => cat.transactions);
+      window.electronAPI.storeTransactions(allTransactions);
+    } catch (error) {
+      console.error('Failed to send transactions to main process:', error);
+    }
+  }
+
   createOrUpdateChart(transactionData);
   showAllTransactions();
-
-  // Display total purchases
-  // const resultsDiv = document.getElementById('results');
-  // const formattedTotal = new Intl.NumberFormat('en-US', {
-  //   style: 'currency',
-  //   currency: 'USD',
-  //   minimumFractionDigits: 2,
-  //   maximumFractionDigits: 2
-  // }).format(totalPurchases);
-  // resultsDiv.innerHTML = `<h3>Total Purchases: ${formattedTotal}</h3>` + resultsDiv.innerHTML;
 }
 
 /**
@@ -348,8 +355,14 @@ function showAllTransactions() {
   showTransactionTable('All Categories');
 }
 
+// Global variables for sorting state
+let currentSortColumn = 'Date';
+let currentSortDirection = 'desc';
+let currentCategory = 'All Categories';
+let currentTransactions = [];
+
 function showTransactionTable(category) {
-  let transactions;
+  currentCategory = category;
   let categoryTotal = 0;
   const overallTotal = Object.values(transactionData).reduce((acc, cat) => acc + cat.total, 0);
 
@@ -363,14 +376,15 @@ function showTransactionTable(category) {
   }
 
   if (category === 'All Categories') {
-    transactions = Object.values(transactionData).flatMap(cat => cat.transactions);
+    currentTransactions = Object.values(transactionData).flatMap(cat => cat.transactions);
     categoryTotal = overallTotal;
   } else {
-    transactions = transactionData[category].transactions;
+    currentTransactions = transactionData[category].transactions;
     categoryTotal = transactionData[category].total;
   }
 
-  transactions.sort((a, b) => new Date(b.Date) - new Date(a.Date));
+  // Initial sort (Date descending by default)
+  currentTransactions.sort((a, b) => new Date(b.Date) - new Date(a.Date));
 
   const percentage = ((categoryTotal / overallTotal) * 100).toFixed(1);
 
@@ -382,6 +396,8 @@ function showTransactionTable(category) {
   }).format(categoryTotal);
 
   const resultsDiv = document.getElementById('results');
+  
+  // Create the HTML structure first
   resultsDiv.innerHTML = `
     <style>
       .transaction-table {
@@ -407,6 +423,28 @@ function showTransactionTable(category) {
         text-transform: uppercase;
         font-weight: bold;
         letter-spacing: 0.5px;
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+      }
+      .transaction-table th:hover {
+        background-color: #2c3e50;
+      }
+      .transaction-table th::after {
+        content: '';
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        opacity: 0.7;
+      }
+      .transaction-table th.sort-asc::after {
+        content: '▲';
+        font-size: 0.7em;
+      }
+      .transaction-table th.sort-desc::after {
+        content: '▼';
+        font-size: 0.7em;
       }
       .transaction-table tbody tr:nth-child(even) {
         background-color: #34495e;
@@ -422,6 +460,14 @@ function showTransactionTable(category) {
       .transaction-table .category {
         font-style: italic;
         color: #e67e22;
+      }
+      .vendor-cell {
+        cursor: pointer;
+        text-decoration: underline;
+        color: #3498db;
+      }
+      .vendor-cell:hover {
+        color: #2980b9;
       }
       .table-header {
         background-color: ${headerColor};
@@ -439,29 +485,82 @@ function showTransactionTable(category) {
     </style>
     <div class="table-container">
       <div class="table-header">Transactions for ${category} - ${formattedTotal} (${percentage}%)</div>
-      <table class="transaction-table">
+      <table class="transaction-table" id="transaction-table">
         <thead>
           <tr>
-            <th>Date</th>
-            <th>Description</th>
-            <th>Amount</th>
-            <th>Category</th>
+            <th data-column="Date">Date</th>
+            <th data-column="Vendor">Vendor</th>
+            <th data-column="Description">Description</th>
+            <th data-column="Amount">Amount</th>
+            ${category === 'All Categories' ? '<th data-column="Category">Category</th>' : ''}
           </tr>
         </thead>
-        <tbody>
-          ${transactions.map(t => `
-            <tr>
-              <td>${t.Date || 'N/A'}</td>
-              <td>${t.Description || 'N/A'}</td>
-              <td class="amount">${t.Amount ? '$' + parseFloat(t.Amount).toFixed(2) : 'N/A'}</td>
-              <td class="category">${t.Category || 'N/A'}</td>
-            </tr>`).join('')}
+        <tbody id="transactions-tbody">
         </tbody>
       </table>
     </div>
   `;
+  
+  // Then populate the table with rows using DOM methods
+  const tbody = document.getElementById('transactions-tbody');
+  
+  // Clear any existing rows
+  tbody.innerHTML = '';
+  
+  // Add each transaction as a row
+  currentTransactions.forEach(t => {
+    const row = document.createElement('tr');
+    
+    // Date cell
+    const dateCell = document.createElement('td');
+    dateCell.textContent = t.Date || 'N/A';
+    row.appendChild(dateCell);
+    
+    // Vendor cell with click handler
+    const vendorCell = document.createElement('td');
+    vendorCell.className = 'vendor-cell';
+    vendorCell.textContent = t.Vendor || 'N/A';
+    vendorCell.addEventListener('click', () => {
+      openVendorDetails(t.Vendor);
+    });
+    row.appendChild(vendorCell);
+    
+    // Description cell (now not clickable)
+    const descCell = document.createElement('td');
+    descCell.textContent = t.Description || 'N/A';
+    row.appendChild(descCell);
+    
+    // Amount cell
+    const amountCell = document.createElement('td');
+    amountCell.className = 'amount';
+    amountCell.textContent = t.Amount ? '$' + parseFloat(t.Amount).toFixed(2) : 'N/A';
+    row.appendChild(amountCell);
+    
+    // Category cell - only add if viewing all categories
+    if (category === 'All Categories') {
+      const catCell = document.createElement('td');
+      catCell.className = 'category';
+      catCell.textContent = t.Category || 'N/A';
+      row.appendChild(catCell);
+    }
+    
+    tbody.appendChild(row);
+  });
+  
+  // Add click event listeners to table headers for sorting
+  document.querySelectorAll('.transaction-table th').forEach(th => {
+    th.addEventListener('click', () => {
+      const column = th.getAttribute('data-column');
+      sortTransactions(column);
+    });
+    
+    // Add sort indicator to the current sort column
+    if (th.getAttribute('data-column') === currentSortColumn) {
+      th.classList.add(currentSortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+    }
+  });
+  
   resultsDiv.style.display = 'block';
-  // resultsDiv.scrollIntoView({behavior: 'smooth'});
 }
 
 function resizeChart() {
@@ -491,6 +590,7 @@ function resizeChart() {
     window.myPieChart.resize();
   }
 }
+
 window.addEventListener('resize', () => {
   clearTimeout(window.resizeTimer);
   window.resizeTimer = setTimeout(() => {
@@ -498,3 +598,121 @@ window.addEventListener('resize', () => {
     resizeChart();
   }, 250);
 });
+
+/**
+ * Sort transactions by the specified column
+ * @param {string} column - The column to sort by
+ * @param {boolean} initialRender - Whether this is the initial rendering (don't toggle direction)
+ */
+function sortTransactions(column, initialRender = false) {
+  // Remove sort indicators from all headers
+  document.querySelectorAll('.transaction-table th').forEach(th => {
+    th.classList.remove('sort-asc', 'sort-desc');
+  });
+  
+  // If same column and not initial render, toggle direction
+  if (column === currentSortColumn && !initialRender) {
+    currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+  } else if (!initialRender) {
+    currentSortColumn = column;
+    // Set default direction based on column type
+    if (column === 'Amount') {
+      currentSortDirection = 'desc'; // Largest amounts first
+    } else if (column === 'Date') {
+      currentSortDirection = 'desc'; // Newest dates first
+    } else {
+      currentSortDirection = 'asc'; // A-Z for text
+    }
+  }
+  
+  // Add sort indicator to current sort column (if table exists)
+  const th = document.querySelector(`.transaction-table th[data-column="${column}"]`);
+  if (th) {
+    th.classList.add(currentSortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+  }
+  
+  // Sort the transactions
+  currentTransactions.sort((a, b) => {
+    let valueA = a[column] || '';
+    let valueB = b[column] || '';
+    
+    // Special handling for date values
+    if (column === 'Date') {
+      valueA = new Date(valueA);
+      valueB = new Date(valueB);
+      return currentSortDirection === 'asc' 
+        ? valueA - valueB 
+        : valueB - valueA;
+    }
+    
+    // Special handling for amount values
+    if (column === 'Amount') {
+      valueA = parseFloat(valueA) || 0;
+      valueB = parseFloat(valueB) || 0;
+      return currentSortDirection === 'asc' 
+        ? valueA - valueB 
+        : valueB - valueA;
+    }
+    
+    // Case-insensitive string comparison for text
+    valueA = valueA.toString().toLowerCase();
+    valueB = valueB.toString().toLowerCase();
+    
+    if (valueA < valueB) return currentSortDirection === 'asc' ? -1 : 1;
+    if (valueA > valueB) return currentSortDirection === 'asc' ? 1 : -1;
+    return 0;
+  });
+  
+  // Clear and redraw the table with sorted data
+  const tbody = document.getElementById('transactions-tbody');
+  if (tbody) {
+    // Clear existing rows
+    tbody.innerHTML = '';
+    
+    // Add each sorted transaction as a row
+    currentTransactions.forEach(t => {
+      const row = document.createElement('tr');
+      
+      // Date cell
+      const dateCell = document.createElement('td');
+      dateCell.textContent = t.Date || 'N/A';
+      row.appendChild(dateCell);
+      
+      // Vendor cell with click handler
+      const vendorCell = document.createElement('td');
+      vendorCell.className = 'vendor-cell';
+      vendorCell.textContent = t.Vendor || 'N/A';
+      vendorCell.addEventListener('click', () => {
+        openVendorDetails(t.Vendor);
+      });
+      row.appendChild(vendorCell);
+      
+      // Description cell
+      const descCell = document.createElement('td');
+      descCell.textContent = t.Description || 'N/A';
+      row.appendChild(descCell);
+      
+      // Amount cell
+      const amountCell = document.createElement('td');
+      amountCell.className = 'amount';
+      amountCell.textContent = t.Amount ? '$' + parseFloat(t.Amount).toFixed(2) : 'N/A';
+      row.appendChild(amountCell);
+      
+      // Category cell - only add if viewing all categories
+      if (currentCategory === 'All Categories') {
+        const catCell = document.createElement('td');
+        catCell.className = 'category';
+        catCell.textContent = t.Category || 'N/A';
+        row.appendChild(catCell);
+      }
+      
+      tbody.appendChild(row);
+    });
+  }
+}
+
+// Function to open a new window showing transactions with the same vendor
+function openVendorDetails(vendor) {
+  console.log(`Opening detail window for vendor: ${vendor}`);
+  window.electronAPI.showVendorDetail(vendor);
+}
