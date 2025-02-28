@@ -214,23 +214,37 @@ function createOrUpdateChart(categoryTotals) {
             const dataset = ctx.chart.data.datasets[0];
             const meta = ctx.chart.getDatasetMeta(0);
             
-            // Calculate percentage of visible total (not overall total)
+            // Calculate percentage of total (for consistency)
+            const totalAmount = dataset.data.reduce((acc, data) => acc + parseFloat(data), 0);
+            const percentage = ((value / totalAmount) * 100).toFixed(1);
+            
+            // Get current slice
+            const currentSlice = meta.data[ctx.dataIndex];
+            
+            // Calculate visual percentage (how much of the visible pie this slice takes up)
             const visibleTotal = dataset.data.reduce((acc, data, index) => {
-              // Only include slices that aren't hidden
               if (!meta.data[index].hidden) {
                 return acc + parseFloat(data);
               }
               return acc;
             }, 0);
             
-            const percentage = ((value / visibleTotal) * 100).toFixed(1);
+            // Calculate visual angle of the slice (what portion of the visible pie it represents)
+            // This helps determine if there's enough space to display the percentage
+            const visualPercentage = ((value / visibleTotal) * 100);
             
-            // Determine minimum percentage threshold based on number of visible slices
+            // Adaptive threshold: When fewer slices are visible, we can show labels on smaller slices
             const visibleSlices = meta.data.filter(slice => !slice.hidden).length;
-            const percentageThreshold = visibleSlices > 8 ? 5 : 3; // Lower threshold if fewer slices are visible
+            let visualThreshold = 5; // Default threshold
             
-            // Return empty string if slice is hidden or too small
-            return meta.data[ctx.dataIndex].hidden || percentage < percentageThreshold ? '' : percentage + '%';
+            // Adjust threshold based on number of visible slices
+            if (visibleSlices <= 3) visualThreshold = 2;      // Show more labels with few slices
+            else if (visibleSlices <= 5) visualThreshold = 3; // Medium threshold
+            else if (visibleSlices <= 8) visualThreshold = 4; // Higher threshold
+            else visualThreshold = 5;                         // Highest threshold with many slices
+            
+            // Show label if slice is visible and its visual percentage is above threshold
+            return currentSlice.hidden || visualPercentage < visualThreshold ? '' : percentage + '%';
           },
           color: 'white',
           font: {
@@ -250,19 +264,11 @@ function createOrUpdateChart(categoryTotals) {
               const label = context.label || '';
               const value = context.raw;
               
-              // Get meta to check which slices are visible
-              const meta = context.chart.getDatasetMeta(0);
+              // Always use the total sum for tooltips to maintain consistency
+              const totalAmount = context.dataset.data.reduce((acc, data) => acc + parseFloat(data), 0);
               
-              // Calculate visible total for tooltips
-              const visibleTotal = context.dataset.data.reduce((acc, data, index) => {
-                if (!meta.data[index].hidden) {
-                  return acc + parseFloat(data);
-                }
-                return acc;
-              }, 0);
-              
-              // Show percentage based on visible total
-              const percentage = ((value / visibleTotal) * 100).toFixed(1);
+              // Show percentage based on total (not just visible)
+              const percentage = ((value / totalAmount) * 100).toFixed(1);
               const formattedValue = new Intl.NumberFormat('en-US', {
                 style: 'currency',
                 currency: 'USD',
@@ -338,18 +344,10 @@ function createOrUpdateChart(categoryTotals) {
             // Toggle the hidden state
             slice.hidden = !slice.hidden;
             
-            // Recalculate percentages based on visible slices
-            const dataset = chart.data.datasets[0];
-            const visibleTotal = dataset.data.reduce((acc, data, index) => {
-              if (!chart.getDatasetMeta(0).data[index].hidden) {
-                return acc + parseFloat(data);
-              }
-              return acc;
-            }, 0);
+            // Log visibility change
+            console.log(`Toggled slice visibility for ${chart.data.labels[index]}`);
             
-            console.log(`Toggled slice visibility. Visible total: ${visibleTotal}`);
-            
-            // Update the chart with the new percentages
+            // Update the chart with the new visibility state
             chart.update();
           }
         },
