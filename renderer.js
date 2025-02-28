@@ -213,10 +213,24 @@ function createOrUpdateChart(categoryTotals) {
           formatter: (value, ctx) => {
             const dataset = ctx.chart.data.datasets[0];
             const meta = ctx.chart.getDatasetMeta(0);
-            const total = dataset.data.reduce((acc, data) => acc + parseFloat(data), 0);
-            const percentage = ((value / total) * 100).toFixed(1);
-            // Return empty string if slice is hidden
-            return meta.data[ctx.dataIndex].hidden || percentage < 3 ? '' : percentage + '%';
+            
+            // Calculate percentage of visible total (not overall total)
+            const visibleTotal = dataset.data.reduce((acc, data, index) => {
+              // Only include slices that aren't hidden
+              if (!meta.data[index].hidden) {
+                return acc + parseFloat(data);
+              }
+              return acc;
+            }, 0);
+            
+            const percentage = ((value / visibleTotal) * 100).toFixed(1);
+            
+            // Determine minimum percentage threshold based on number of visible slices
+            const visibleSlices = meta.data.filter(slice => !slice.hidden).length;
+            const percentageThreshold = visibleSlices > 8 ? 5 : 3; // Lower threshold if fewer slices are visible
+            
+            // Return empty string if slice is hidden or too small
+            return meta.data[ctx.dataIndex].hidden || percentage < percentageThreshold ? '' : percentage + '%';
           },
           color: 'white',
           font: {
@@ -235,8 +249,20 @@ function createOrUpdateChart(categoryTotals) {
             label: function(context) {
               const label = context.label || '';
               const value = context.raw;
-              const total = context.dataset.data.reduce((acc, data) => acc + parseFloat(data), 0);
-              const percentage = ((value / total) * 100).toFixed(1);
+              
+              // Get meta to check which slices are visible
+              const meta = context.chart.getDatasetMeta(0);
+              
+              // Calculate visible total for tooltips
+              const visibleTotal = context.dataset.data.reduce((acc, data, index) => {
+                if (!meta.data[index].hidden) {
+                  return acc + parseFloat(data);
+                }
+                return acc;
+              }, 0);
+              
+              // Show percentage based on visible total
+              const percentage = ((value / visibleTotal) * 100).toFixed(1);
               const formattedValue = new Intl.NumberFormat('en-US', {
                 style: 'currency',
                 currency: 'USD',
@@ -269,6 +295,9 @@ function createOrUpdateChart(categoryTotals) {
                 return data.labels.map((label, i) => {
                   const dataset = data.datasets[0];
                   const value = dataset.data[i];
+                  
+                  // Always use the overall total for legend percentages
+                  // This keeps legend percentages consistent regardless of which slices are hidden
                   const total = dataset.data.reduce((acc, data) => acc + parseFloat(data), 0);
                   const percentage = ((value / total) * 100).toFixed(1);
                   // Access metadata based on Chart.js version
@@ -308,7 +337,19 @@ function createOrUpdateChart(categoryTotals) {
 
             // Toggle the hidden state
             slice.hidden = !slice.hidden;
-            // Update the chart
+            
+            // Recalculate percentages based on visible slices
+            const dataset = chart.data.datasets[0];
+            const visibleTotal = dataset.data.reduce((acc, data, index) => {
+              if (!chart.getDatasetMeta(0).data[index].hidden) {
+                return acc + parseFloat(data);
+              }
+              return acc;
+            }, 0);
+            
+            console.log(`Toggled slice visibility. Visible total: ${visibleTotal}`);
+            
+            // Update the chart with the new percentages
             chart.update();
           }
         },
