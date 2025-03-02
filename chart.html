@@ -1237,8 +1237,13 @@
     try {
       // Get the dataset (for non-stacked chart, it's the first dataset)
       const dataset = chart.data.datasets[0];
-      const originalBackground = dataset.backgroundColor[dateIndex];
-      const originalBorder = dataset.borderColor[dateIndex];
+      
+      // Store all original colors to ensure proper restoration
+      const allOriginalBackgrounds = [...dataset.backgroundColor];
+      const allOriginalBorders = [...dataset.borderColor];
+      const originalBackground = allOriginalBackgrounds[dateIndex];
+      const originalBorder = allOriginalBorders[dateIndex];
+      const originalBorderWidth = dataset.borderWidth || 1;
 
       // Flash effect with more dramatic colors
       const flashCount = 4;
@@ -1258,15 +1263,22 @@
 
       const flashTimer = setInterval(() => {
         if (flashIteration % 2 === 0) {
-          // Highlight state
-          dataset.backgroundColor[dateIndex] = highlightColor;
-          dataset.borderColor[dateIndex] = highlightBorder;
+          // Highlight state - ONLY change the specific day's bar
+          // Create new arrays to avoid side effects
+          const newBackgrounds = [...dataset.backgroundColor];
+          const newBorders = [...dataset.borderColor];
+          
+          newBackgrounds[dateIndex] = highlightColor;
+          newBorders[dateIndex] = highlightBorder;
+          
+          dataset.backgroundColor = newBackgrounds;
+          dataset.borderColor = newBorders;
           dataset.borderWidth = 3;
         } else {
-          // Contrast state
-          dataset.backgroundColor[dateIndex] = originalBackground;
-          dataset.borderColor[dateIndex] = originalBorder;
-          dataset.borderWidth = 1;
+          // Contrast state - restore all original colors
+          dataset.backgroundColor = [...allOriginalBackgrounds];
+          dataset.borderColor = [...allOriginalBorders];
+          dataset.borderWidth = originalBorderWidth;
         }
 
         chart.update('none'); // Update without animation
@@ -1274,10 +1286,10 @@
         flashIteration++;
         if (flashIteration >= flashCount * 2) {
           clearInterval(flashTimer);
-          // Ensure we end with the original state
-          dataset.backgroundColor[dateIndex] = originalBackground;
-          dataset.borderColor[dateIndex] = originalBorder;
-          dataset.borderWidth = 1;
+          // Ensure we end with the original state by restoring ALL original values
+          dataset.backgroundColor = [...allOriginalBackgrounds];
+          dataset.borderColor = [...allOriginalBorders];
+          dataset.borderWidth = originalBorderWidth;
 
           // Reset shadow
           chart.ctx.shadowColor = originalShadowColor;
@@ -1296,7 +1308,12 @@
     try {
       const dataset = chart.data.datasets[datasetIndex];
       const originalBorderWidth = dataset.borderWidth || 1;
-
+      
+      // Store all original colors and borders for the whole dataset
+      // to ensure we only change the specific segment we want to highlight
+      const allOriginalBackgrounds = [...dataset.backgroundColor];
+      const allOriginalBorders = [...dataset.borderColor];
+      
       // More dramatic flash effect
       const flashCount = 4;
       const flashInterval = 180;
@@ -1315,14 +1332,23 @@
 
       const flashTimer = setInterval(() => {
         if (flashIteration % 2 === 0) {
-          // Highlight state
-          dataset.backgroundColor[dateIndex] = highlightColor;
-          dataset.borderColor[dateIndex] = highlightBorder;
+          // Highlight state - ONLY change the specific segment
+          // Create a new array to avoid affecting other components
+          const newBackgrounds = [...dataset.backgroundColor];
+          const newBorders = [...dataset.borderColor];
+          
+          // Only change the color for the specific date index
+          newBackgrounds[dateIndex] = highlightColor;
+          newBorders[dateIndex] = highlightBorder;
+          
+          // Update the dataset with our new arrays
+          dataset.backgroundColor = newBackgrounds;
+          dataset.borderColor = newBorders;
           dataset.borderWidth = 3;
         } else {
-          // Original state
-          dataset.backgroundColor[dateIndex] = originalColor;
-          dataset.borderColor[dateIndex] = 'rgba(255, 255, 255, 0.95)';
+          // Original state - restore all original colors
+          dataset.backgroundColor = [...allOriginalBackgrounds];
+          dataset.borderColor = [...allOriginalBorders];
           dataset.borderWidth = originalBorderWidth;
         }
 
@@ -1331,9 +1357,9 @@
         flashIteration++;
         if (flashIteration >= flashCount * 2) {
           clearInterval(flashTimer);
-          // Ensure we end with the original state
-          dataset.backgroundColor[dateIndex] = originalColor;
-          dataset.borderColor[dateIndex] = 'rgba(255, 255, 255, 0.95)';
+          // Ensure we end with the original state by restoring ALL original values
+          dataset.backgroundColor = [...allOriginalBackgrounds];
+          dataset.borderColor = [...allOriginalBorders];
           dataset.borderWidth = originalBorderWidth;
 
           // Reset shadow
