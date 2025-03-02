@@ -573,8 +573,63 @@
       return `${month}/${day}`;
     }
 
-    // For now, use a simple approach without stacking - we'll re-implement stacking after fixing the chart
+    // Prepare stacked bar data to visually split bars based on transaction amounts
     const stackedData = [];
+    
+    // Process each date to create stacked segments for transactions
+    uniqueDates.forEach(date => {
+      const dayTransactions = transactionsByDate[date];
+      if (!dayTransactions || dayTransactions.length === 0) return;
+      
+      // Sort transactions by amount (largest first) for better visual stacking
+      dayTransactions.sort((a, b) => {
+        const amountA = a.ParsedAmount || 0;
+        const amountB = b.ParsedAmount || 0;
+        return amountB - amountA;
+      });
+      
+      // Create a stack segment for each transaction
+      dayTransactions.forEach((transaction, index) => {
+        // Create a new dataset for this stack level if needed
+        if (!stackedData[index]) {
+          stackedData[index] = {
+            label: `Transaction ${index + 1}`,
+            data: Array(uniqueDates.length).fill(0),
+            backgroundColor: [],
+            borderColor: [],
+            borderWidth: 1,
+            // Only round top for first segment
+            borderRadius: index === 0 ? [4, 4, 0, 0] : 0
+          };
+        }
+        
+        // Find the index of this date in the uniqueDates array
+        const dateIndex = uniqueDates.indexOf(date);
+        
+        // Get amount from ParsedAmount or fall back to Amount
+        let amount = 0;
+        if (transaction.ParsedAmount !== undefined && !isNaN(transaction.ParsedAmount)) {
+          amount = transaction.ParsedAmount;
+        } else if (typeof transaction.Amount === 'number') {
+          amount = transaction.Amount;
+        } else if (transaction.Amount) {
+          const parsed = parseFloat(String(transaction.Amount).replace(/[$,]/g, ''));
+          if (!isNaN(parsed)) amount = parsed;
+        }
+        
+        // Set the value for this transaction in the stack
+        stackedData[index].data[dateIndex] = amount;
+        
+        // Store the transaction for use in tooltips later
+        if (!stackedData[index].transactions) stackedData[index].transactions = {};
+        stackedData[index].transactions[dateIndex] = transaction;
+        
+        // Set a color based on position in stack
+        const hue = 210 - (index * 15); // Slightly different hue for each stack level
+        stackedData[index].backgroundColor[dateIndex] = `hsla(${hue}, 75%, 50%, 0.8)`;
+        stackedData[index].borderColor[dateIndex] = 'rgba(255, 255, 255, 0.7)';
+      });
+    });
 
     // Find min and max for color scale (moved up to use earlier)
     const minAmount = Math.min(...amounts);
@@ -717,7 +772,7 @@
       type: 'bar',
       data: {
         labels: dates,
-        datasets: [{
+        datasets: stackedData.length > 0 ? stackedData : [{
           label: 'Amount',
           data: amounts,
           backgroundColor: barColors,
@@ -734,6 +789,7 @@
           if (elements.length > 0) {
             const index = elements[0].index;
             const date = dates[index];
+            // Show all transactions for this date regardless of which stack segment was clicked
             showDayTransactions(date, transactionsByDate[date], amounts[index]);
           }
         },
@@ -779,12 +835,12 @@
                 if (stackedData.length > 0) {
                   const datasetIndex = context.datasetIndex;
 
-                  // Find which transaction this is
-                  const dayTransactions = transactionsByDate[date];
-                  if (dayTransactions && dayTransactions[datasetIndex]) {
-                    const transaction = dayTransactions[datasetIndex];
-                    // Use pre-parsed amount
-                    const amount = transaction.ParsedAmount;
+                  // Get transaction from stored data in stack
+                  const stackData = stackedData[datasetIndex];
+                  if (stackData && stackData.transactions && stackData.transactions[index]) {
+                    const transaction = stackData.transactions[index];
+                    // Get the amount from the actual segment value
+                    const amount = context.raw; // Use the actual stack segment value
                     const vendor = transaction.Vendor || 'N/A';
                     const description = transaction.Description || 'N/A';
                     const percentOfDay = ((amount / totalAmount) * 100).toFixed(1);
@@ -1095,36 +1151,69 @@
       matchingTransactions = dayTransactions.filter(t => t.Category === category);
     }
 
-    // Find the specific transaction in the day's transactions
+    // Find the specific transaction in the stacked data
+    let foundStackIndex = -1;
+    let transactionFound = false;
+    
+    // When using stacked bars, we need to search all datasets
+    if (chart.data.datasets.length > 1) {
+      // Search through all stack datasets
+      for (let stackIndex = 0; stackIndex < chart.data.datasets.length; stackIndex++) {
+        const stackData = chart.data.datasets[stackIndex];
+        
+        // Check if this stack has transactions data
+        if (stackData.transactions && stackData.transactions[dateIndex]) {
+          const transaction = stackData.transactions[dateIndex];
+          
+          // Compare with the clicked transaction values
+          if (transaction && 
+              transaction.Vendor === vendor && 
+              Math.abs(parseFloat(transaction.ParsedAmount || transaction.Amount) - amount) < 0.01) {
+            // Found the matching transaction!
+            foundStackIndex = stackIndex;
+            transactionFound = true;
+            break;
+          }
+        }
+      }
+    }
+    
+    // Fallback to the old method if not found in stacked data
     let transactionIndex = -1;
-    for (let i = 0; i < matchingTransactions.length; i++) {
-      const t = matchingTransactions[i];
-      if (parseFloat(t.Amount) === amount && t.Vendor === vendor) {
-        transactionIndex = i;
-        break;
+    if (!transactionFound) {
+      for (let i = 0; i < matchingTransactions.length; i++) {
+        const t = matchingTransactions[i];
+        if (parseFloat(t.Amount) === amount && t.Vendor === vendor) {
+          transactionIndex = i;
+          break;
+        }
       }
     }
 
-    if (transactionIndex === -1) {
-      console.log('Transaction not found exactly, flashing whole day bar');
-      // Flash the whole day bar instead
-      flashBar(chart, dateIndex);
-      return;
-    }
-
-    // For stacked charts (multiple datasets)
-    if (chart.data.datasets.length > 1) {
-      // Now highlight the specific bar segment by updating its style directly
+    // Determine which segment to flash
+    if (transactionFound && foundStackIndex !== -1) {
+      // We found the exact stack segment to highlight!
+      console.log(`Found matching transaction in stack: ${foundStackIndex}, dateIndex: ${dateIndex}`);
       try {
-        // Get the chart canvas
-        const canvas = chart.canvas;
-
-        // Flash the specific bar segment if possible, otherwise flash the entire bar
+        // Get the current background color for this segment
+        const originalBackground = chart.data.datasets[foundStackIndex].backgroundColor[dateIndex];
+        
+        // Flash only this specific stack segment
+        flashBarSegment(chart, foundStackIndex, dateIndex, originalBackground);
+      } catch (error) {
+        console.error('Error flashing stack segment:', error);
+        // Fallback to flashing the whole bar
+        flashBar(chart, dateIndex);
+      }
+    } 
+    else if (transactionIndex !== -1 && chart.data.datasets.length > 1) {
+      // Try to use the transaction index in the stacked data
+      console.log(`Using transaction index: ${transactionIndex} for stacked chart`);
+      try {
+        // Try to find a matching segment in the stack
+        // First check if the index is within the stack range
         if (transactionIndex < chart.data.datasets.length) {
-          // Create a flash effect by temporarily setting a custom color
           const originalBackground = chart.data.datasets[transactionIndex].backgroundColor[dateIndex];
-
-          // Create flashing effect by alternating colors
           flashBarSegment(chart, transactionIndex, dateIndex, originalBackground);
         } else {
           // Fallback to highlighting the whole bar
@@ -1135,8 +1224,10 @@
         // Fallback to flashing the whole bar
         flashBar(chart, dateIndex);
       }
-    } else {
-      // For non-stacked charts, flash the whole bar
+    } 
+    else {
+      // If no specific segment found, flash the whole bar
+      console.log('Transaction not found exactly, flashing whole day bar');
       flashBar(chart, dateIndex);
     }
   }

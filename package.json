@@ -26,7 +26,10 @@
     "productName": "Credit Card Purchases Analyzer",
     "mac": {
       "category": "public.app-category.finance",
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "icon": "build/icon.icns",
       "darkModeSupport": true
     },
