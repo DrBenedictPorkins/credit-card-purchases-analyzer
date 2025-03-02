@@ -3,8 +3,9 @@ const path = require('path');
 const fs = require('fs');
 const { parse } = require('csv-parse/sync');
 
-// Store transactions data globally so it can be accessed by the detail window
+// Store transactions data globally so it can be accessed by other windows
 let globalTransactions = [];
+let chartWindows = new Map(); // Keep track of chart windows by category
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -135,5 +136,114 @@ ipcMain.handle('show-description-detail', async (_, description) => {
 // Handle request to open the vendor detail window
 ipcMain.handle('show-vendor-detail', async (_, vendor) => {
   createDetailWindow(vendor, 'vendor');
+  return true;
+});
+
+// Handle request to open bar chart window for a category
+ipcMain.handle('show-category-chart', async (_, data) => {
+  const { category, transactions } = data;
+  
+  // Check if a chart window for this category already exists
+  if (chartWindows.has(category)) {
+    const existingWindow = chartWindows.get(category);
+    
+    // Check if the window is still open
+    if (!existingWindow.isDestroyed()) {
+      existingWindow.focus(); // Bring window to front
+      
+      // Update the data in the existing window
+      existingWindow.webContents.send('chart-data', { 
+        category, 
+        transactions 
+      });
+      
+      return true;
+    }
+    
+    // Remove reference to destroyed window
+    chartWindows.delete(category);
+  }
+  
+  // Get the primary display size
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width, height } = primaryDisplay.workAreaSize;
+  
+  // Create new chart window
+  const chartWindow = new BrowserWindow({
+    width: 800,
+    height: 800,
+    title: `Timeline: ${category}`,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      enableRemoteModule: false,
+      preload: path.join(__dirname, 'preload.js')
+    }
+  });
+  
+  // Load the chart HTML file
+  chartWindow.loadFile('chart.html');
+  
+  // Store reference to the new window
+  chartWindows.set(category, chartWindow);
+  
+  // When window is closed, remove from our map
+  chartWindow.on('closed', () => {
+    chartWindows.delete(category);
+  });
+  
+  // Wait for the window to be ready
+  chartWindow.webContents.on('did-finish-load', () => {
+    // Log transactions before sending to chart window
+    console.log(`Sending ${transactions.length} transactions to chart window for ${category}`);
+    
+    // CRITICAL FIX: Force all transactions to have numeric amounts
+    // Create simplified transactions with just the data we need
+    // And force all amounts to be numeric values
+    const processedTransactions = transactions.map(t => {
+      // Parse amount regardless of type
+      const amountStr = typeof t.Amount === 'string' ? t.Amount : String(t.Amount);
+      let parsedAmount = parseFloat(amountStr.replace(/[$,]/g, ''));
+      
+      // If we can't parse a valid amount, use the NumericAmount field
+      if (isNaN(parsedAmount) && t.NumericAmount !== undefined) {
+        parsedAmount = parseFloat(t.NumericAmount);
+      }
+      
+      // If we still don't have a valid number, force a small positive value
+      // This ensures the chart displays
+      if (isNaN(parsedAmount) || parsedAmount <= 0) {
+        parsedAmount = 1.0; // Use a minimal positive value
+      }
+      
+      // Create a clean simple object with just what we need
+      return {
+        Date: t.Date || '',
+        Vendor: t.Vendor || '',
+        Description: t.Description || '',
+        Category: t.Category || '',
+        // ALWAYS use the parsed amount as a number
+        Amount: parsedAmount
+      };
+    });
+    
+    if (processedTransactions.length > 0) {
+      console.log("First processed transaction:", JSON.stringify(processedTransactions[0]).substring(0, 200));
+      console.log("Amount value:", processedTransactions[0].Amount);
+      console.log("Amount type:", typeof processedTransactions[0].Amount);
+      
+      // Also check if NumericAmount exists
+      if (processedTransactions[0].NumericAmount !== undefined) {
+        console.log("NumericAmount:", processedTransactions[0].NumericAmount);
+      }
+    }
+    
+    // Send data to the chart window
+    chartWindow.webContents.send('chart-data', { 
+      category, 
+      transactions: processedTransactions 
+    });
+  });
+  
   return true;
 });

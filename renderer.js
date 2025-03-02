@@ -88,7 +88,15 @@ function analyzeTransactions(transactions) {
   let totalPurchases = 0;
   transactionData = transactions.reduce((acc, transaction) => {
     const category = transaction.Category;
-    const amount = parseFloat(transaction.Amount);
+    
+    // Make sure we still have the original Amount
+    const originalAmount = transaction.Amount;
+    
+    // Ensure Amount is a string before parsing
+    const amountStr = String(transaction.Amount).replace(/[$,]/g, '');
+    const amount = parseFloat(amountStr);
+
+    console.log(`Processing transaction: Category=${category}, Original Amount=${originalAmount}, Parsed Amount=${amount}`);
 
     if (isNaN(amount) || amount <= 0) {
       console.warn('Invalid or non-positive amount for transaction:', transaction);
@@ -99,8 +107,21 @@ function analyzeTransactions(transactions) {
       acc[category] = {total: 0, transactions: []};
     }
 
+    // Create a modified transaction with numeric amount
+    // IMPORTANT: Explicitly convert the Amount to a string and add a numeric field
+    const enhancedTransaction = {...transaction};
+    
+    // Replace the Amount with a numeric value directly
+    enhancedTransaction.Amount = amount;
+    
+    // Also add dedicated numeric fields for backup
+    enhancedTransaction.NumericAmount = amount;
+    enhancedTransaction.OriginalAmount = originalAmount;
+    
+    console.log(`Enhanced transaction: Amount=${enhancedTransaction.Amount}, NumericAmount=${enhancedTransaction.NumericAmount}`);
+    
     acc[category].total += amount;
-    acc[category].transactions.push(transaction);
+    acc[category].transactions.push(enhancedTransaction);
     totalPurchases += amount;
     return acc;
   }, {});
@@ -377,13 +398,35 @@ function resetChart() {
       window.myPieChart.destroy();
       window.myPieChart = null;
     }
+    
+    // Reset current state variables
+    currentSortColumn = 'Date';
+    currentSortDirection = 'desc';
+    currentCategory = 'All Categories';
+    
+    // Re-analyze data and rebuild everything
     analyzeTransactions(transactions);
-    showAllTransactions();  // Add this line to show all transactions
+    
+    // Show all transactions
+    showAllTransactions();
+    
+    // Update UI
     const resultsDiv = document.getElementById('results');
     if (resultsDiv) {
       resultsDiv.innerHTML += '<p>Chart has been reset to its original state.</p>';
       resultsDiv.style.display = 'block';
       resultsDiv.scrollIntoView({behavior: 'smooth'});
+    }
+    
+    // Make sure event handlers are properly set
+    const categoryHeader = document.getElementById('category-header');
+    if (categoryHeader) {
+      console.log('Updating category header click handler after reset');
+      categoryHeader.addEventListener('click', () => {
+        openCategoryBarChart('All Categories');
+      });
+      categoryHeader.title = "Click to view timeline chart";
+      categoryHeader.style.cursor = "pointer";
     }
   } else {
     console.error("Failed to parse original CSV data or no valid transactions found");
@@ -515,6 +558,22 @@ function showTransactionTable(category) {
         border-radius: 8px 8px 0 0;
         font-size: 1.2em;
         font-weight: bold;
+        cursor: pointer;
+        transition: background-color 0.2s;
+        position: relative;
+      }
+      .table-header:hover {
+        background-color: ${adjustColorBrightness(headerColor, -20)};
+      }
+      .table-header::after {
+        content: ' 📊 Click for timeline';
+        font-size: 0.8em;
+        opacity: 0;
+        margin-left: 10px;
+        transition: opacity 0.3s;
+      }
+      .table-header:hover::after {
+        opacity: 1;
       }
       .table-container {
         margin-top: 20px;
@@ -523,7 +582,7 @@ function showTransactionTable(category) {
       }
     </style>
     <div class="table-container">
-      <div class="table-header">Transactions for ${category} - ${formattedTotal} (${percentage}%)</div>
+      <div class="table-header" id="category-header">Transactions for ${category} - ${formattedTotal} (${percentage}%)</div>
       <table class="transaction-table" id="transaction-table">
         <thead>
           <tr>
@@ -598,6 +657,25 @@ function showTransactionTable(category) {
       th.classList.add(currentSortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
     }
   });
+  
+  // Add click event listener to category header for bar chart visualization
+  const categoryHeader = document.getElementById('category-header');
+  if (categoryHeader) {
+    // Remove any existing event listeners to prevent duplicates
+    categoryHeader.replaceWith(categoryHeader.cloneNode(true));
+    
+    // Get the fresh reference after replacement
+    const newCategoryHeader = document.getElementById('category-header');
+    
+    // Add the event listener to the fresh element
+    newCategoryHeader.addEventListener('click', () => {
+      openCategoryBarChart(category);
+    });
+    
+    // Add a visual cue to indicate it's clickable
+    newCategoryHeader.title = "Click to view timeline chart";
+    newCategoryHeader.style.cursor = "pointer";
+  }
   
   resultsDiv.style.display = 'block';
 }
@@ -750,8 +828,91 @@ function sortTransactions(column, initialRender = false) {
   }
 }
 
+/**
+ * Adjust color brightness by a percentage
+ * @param {string} hex - Hex color code
+ * @param {number} percent - Percentage to adjust (-100 to 100)
+ * @returns {string} Adjusted hex color
+ */
+function adjustColorBrightness(hex, percent) {
+  // Expand shorthand hex (e.g. #ABC to #AABBCC)
+  hex = hex.replace(/^#([a-f\d])([a-f\d])([a-f\d])$/i, '#$1$1$2$2$3$3');
+  
+  // Parse the hex color to RGB values
+  let r = parseInt(hex.substr(1, 2), 16);
+  let g = parseInt(hex.substr(3, 2), 16);
+  let b = parseInt(hex.substr(5, 2), 16);
+  
+  // Adjust the RGB values
+  r = Math.max(0, Math.min(255, r + percent * 2.55));
+  g = Math.max(0, Math.min(255, g + percent * 2.55));
+  b = Math.max(0, Math.min(255, b + percent * 2.55));
+  
+  // Convert back to hex and return
+  const rHex = Math.round(r).toString(16).padStart(2, '0');
+  const gHex = Math.round(g).toString(16).padStart(2, '0');
+  const bHex = Math.round(b).toString(16).padStart(2, '0');
+  
+  return `#${rHex}${gHex}${bHex}`;
+}
+
 // Function to open a new window showing transactions with the same vendor
 function openVendorDetails(vendor) {
   console.log(`Opening detail window for vendor: ${vendor}`);
   window.electronAPI.showVendorDetail(vendor);
+}
+
+// Function to open a bar chart of transactions for a category
+function openCategoryBarChart(category) {
+  console.log(`Opening bar chart for category: ${category}`);
+  console.log(`Current transactions: ${currentTransactions.length}`);
+  
+  if (!window.electronAPI || !window.electronAPI.showCategoryBarChart) {
+    console.error('showCategoryBarChart API function not available');
+    return;
+  }
+  
+  try {
+    // Always get fresh transactions from the transactionData
+    let transactionsToSend = [];
+    
+    // Ensure transactionData is available
+    if (!transactionData || Object.keys(transactionData).length === 0) {
+      console.error('No transaction data available');
+      alert('No transaction data available. Please upload a CSV file first.');
+      return;
+    }
+    
+    if (category === "All Categories") {
+      // Get all transactions from all categories
+      Object.values(transactionData).forEach(cat => {
+        transactionsToSend = transactionsToSend.concat(cat.transactions);
+      });
+    } else if (transactionData[category]) {
+      // Get all transactions just for this category
+      transactionsToSend = transactionData[category].transactions;
+    } else {
+      console.error(`Category "${category}" not found in transaction data`);
+      return;
+    }
+    
+    console.log(`Sending ${transactionsToSend.length} transactions for category: ${category}`);
+    
+    // Only proceed if we have transactions to show
+    if (transactionsToSend.length > 0) {
+      // Log the data being sent to the chart
+      console.log("Sample transactions being sent to chart:");
+      for (let i = 0; i < Math.min(3, transactionsToSend.length); i++) {
+        console.log(`Transaction ${i+1}:`, transactionsToSend[i]);
+        console.log(`  Amount value: ${transactionsToSend[i].Amount}`);
+        console.log(`  Amount type: ${typeof transactionsToSend[i].Amount}`);
+      }
+      
+      window.electronAPI.showCategoryBarChart(category, transactionsToSend);
+    } else {
+      alert(`No transactions found for category: ${category}`);
+    }
+  } catch (error) {
+    console.error('Error opening category bar chart:', error);
+  }
 }
