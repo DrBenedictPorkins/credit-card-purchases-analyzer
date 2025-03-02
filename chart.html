@@ -1253,13 +1253,6 @@
       // Create more prominent highlight effect
       const highlightColor = '#FFD700'; // Bright gold
       const highlightBorder = '#FF4500'; // Orange-Red
-      const shadowColor = 'rgba(255, 215, 0, 0.6)'; // Gold shadow
-
-      // Add visual shadow to the canvas context
-      const originalShadowColor = chart.ctx.shadowColor;
-      const originalShadowBlur = chart.ctx.shadowBlur;
-      chart.ctx.shadowColor = shadowColor;
-      chart.ctx.shadowBlur = 15;
 
       const flashTimer = setInterval(() => {
         if (flashIteration % 2 === 0) {
@@ -1306,66 +1299,80 @@
   // Helper function to flash a specific bar segment in a stacked chart
   function flashBarSegment(chart, datasetIndex, dateIndex, originalColor) {
     try {
-      const dataset = chart.data.datasets[datasetIndex];
-      const originalBorderWidth = dataset.borderWidth || 1;
+      console.log(`Flashing ONLY segment: dataset=${datasetIndex}, date=${dateIndex}`);
       
-      // Store all original colors and borders for the whole dataset
-      // to ensure we only change the specific segment we want to highlight
-      const allOriginalBackgrounds = [...dataset.backgroundColor];
-      const allOriginalBorders = [...dataset.borderColor];
+      // Use a completely different approach: draw a highlight over the specific bar
+      // This avoids any issues with array references in Chart.js
       
-      // More dramatic flash effect
+      // Get the chart canvas and create an overlay
+      const canvas = chart.canvas;
+      const ctx = canvas.getContext('2d');
+      
+      // Get the actual position and dimensions of the specific bar segment
+      // from the chart's internal data structures
+      const meta = chart.getDatasetMeta(datasetIndex);
+      
+      if (!meta || !meta.data || !meta.data[dateIndex]) {
+        console.error(`Bar element not found at ${datasetIndex}/${dateIndex}`);
+        return;
+      }
+      
+      // Get the specific bar element we want to highlight
+      const bar = meta.data[dateIndex];
+      
+      // Store the position and dimensions of the bar
+      const x = bar.x;
+      const y = bar.y;
+      const width = bar.width;
+      const height = bar.height;
+      const base = bar.base;
+      
+      console.log(`Bar position: x=${x}, y=${y}, width=${width}, height=${height}`);
+      
+      // Create highlight effect
+      const highlightColor = '#FFD700'; // Bright gold
+      const highlightBorder = '#FF4500'; // Orange-Red
+      
+      // Flash parameters
       const flashCount = 4;
       const flashInterval = 180;
       let flashIteration = 0;
-
-      // Create more prominent highlight effect
-      const highlightColor = '#FFD700'; // Bright gold
-      const highlightBorder = '#FF4500'; // Orange-Red
-      const shadowColor = 'rgba(255, 215, 0, 0.6)'; // Gold shadow
-
-      // Add visual shadow to the canvas context
-      const originalShadowColor = chart.ctx.shadowColor;
-      const originalShadowBlur = chart.ctx.shadowBlur;
-      chart.ctx.shadowColor = shadowColor;
-      chart.ctx.shadowBlur = 15;
-
-      const flashTimer = setInterval(() => {
+      
+      // Save the original draw function to restore it later
+      const originalDraw = chart.draw;
+      
+      // Create a hook to draw our highlight after chart rendering
+      chart.draw = function() {
+        // First call the original draw function to render the chart
+        originalDraw.apply(chart, arguments);
+        
+        // Then draw our highlight on top if we're in highlight phase
         if (flashIteration % 2 === 0) {
-          // Highlight state - ONLY change the specific segment
-          // Create a new array to avoid affecting other components
-          const newBackgrounds = [...dataset.backgroundColor];
-          const newBorders = [...dataset.borderColor];
+          ctx.save();
           
-          // Only change the color for the specific date index
-          newBackgrounds[dateIndex] = highlightColor;
-          newBorders[dateIndex] = highlightBorder;
+          // Draw highlight rectangle with the same dimensions as the bar segment
+          ctx.fillStyle = highlightColor;
+          ctx.strokeStyle = highlightBorder;
+          ctx.lineWidth = 3;
           
-          // Update the dataset with our new arrays
-          dataset.backgroundColor = newBackgrounds;
-          dataset.borderColor = newBorders;
-          dataset.borderWidth = 3;
-        } else {
-          // Original state - restore all original colors
-          dataset.backgroundColor = [...allOriginalBackgrounds];
-          dataset.borderColor = [...allOriginalBorders];
-          dataset.borderWidth = originalBorderWidth;
+          // Draw the rectangle - note that y and height depend on whether the bar goes up or down
+          ctx.fillRect(x - width/2, y, width, base - y);
+          ctx.strokeRect(x - width/2, y, width, base - y);
+          
+          ctx.restore();
         }
-
-        chart.update('none'); // Update without animation
-
+      };
+      
+      // Flash timer
+      const flashTimer = setInterval(() => {
         flashIteration++;
+        chart.update('none'); // Update without animation
+        
         if (flashIteration >= flashCount * 2) {
           clearInterval(flashTimer);
-          // Ensure we end with the original state by restoring ALL original values
-          dataset.backgroundColor = [...allOriginalBackgrounds];
-          dataset.borderColor = [...allOriginalBorders];
-          dataset.borderWidth = originalBorderWidth;
-
-          // Reset shadow
-          chart.ctx.shadowColor = originalShadowColor;
-          chart.ctx.shadowBlur = originalShadowBlur;
-
+          
+          // Restore original draw function
+          chart.draw = originalDraw;
           chart.update('none');
         }
       }, flashInterval);
